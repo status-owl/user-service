@@ -13,7 +13,7 @@ help:   ## show this help
 
 $(OAPI_CODEGEN):
 	@echo "installing oapi-codegen..."
-	@go get github.com/deepmap/oapi-codegen/cmd/oapi-codegen
+	@go install github.com/deepmap/oapi-codegen/cmd/oapi-codegen@v1.9.0
 
 $(SPEC_API_V1_GEN): $(OAPI_CODEGEN)
 	@echo "generating models from api spec..." 
