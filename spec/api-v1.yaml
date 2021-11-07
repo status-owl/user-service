@@ -1,0 +1,102 @@
+openapi: "3.0.0"
+info:
+  title: User Service
+  version: 1.0.0
+  license:
+    name: MIT
+servers:
+- url: https://status-owl.de
+paths:
+  /users:
+    post:
+      summary: Create a user
+      operationId: createUser
+      tags:
+      - users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"  
+      responses:
+        '201':
+          description: User has been created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateUserResponse"
+        default:
+          description: an error is occurred
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+
+components:
+  schemas:
+    CreateUserRequest:
+      type: object
+      required:
+        - name
+        - email
+        - password
+      properties:
+        name:
+          type: string
+          description: User name
+          example: John Doe
+        email:
+          type: string
+          description: Email address
+          example: john.doe@example.com
+        password:
+          type: string
+          description: Password
+          example: dgRe_sd12Adf7_Dt
+    CreateUserResponse:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          example: b479a4d1-bbaf-46b6-9575-6a932b3a5f50
+    Problem:
+      type: object
+      required:
+        - status
+        - title
+      properties:
+        type:
+          type: string
+          description: A URI reference that identifies the problem type
+          example: https://status-owl.de/errors/invalid-email
+        title:
+          type: string
+          description: A short, human-readable summary of the problem type
+          example: Invalid email address
+        status:
+          type: integer
+          description: The HTTP status code
+          example: 400
+        detail:
+          type: string
+          description: A human-readable explanation specific to this occurrence of the problem.
+          example: "Email address is malfowmed"
+        invalid-params:
+          type: array
+          items:
+            type: object
+            title: InvalidParam
+            description: Represents an invalid property in a bad request
+            properties:
+              name:
+                type: string
+                description: Name of the property
+                example: email
+              reason:
+                type: string
+                description: Why is the property considered invalid
+                example: malformed email address
