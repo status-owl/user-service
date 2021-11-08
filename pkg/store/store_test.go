@@ -1,4 +1,4 @@
-package service
+package store
 
 import (
 	"context"
@@ -8,15 +8,19 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
+	"github.com/status-owl/user-service/pkg/model"
 	"github.com/stretchr/testify/assert"
 	tc "github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+
+	gklog "github.com/go-kit/log"
 )
 
 var mongoClient *mongo.Client
+var store UserStore
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
@@ -33,13 +37,17 @@ func TestMain(m *testing.M) {
 		log.Fatalf("failed to establish a mongodb connection: %s", err.Error())
 	}
 
+	baseStore, err := NewUserStore(mongoClient)
+	if err != nil {
+		log.Fatalf("failed to create the userStore: %s", err.Error())
+	}
+	store = NewLoggingUserStore(baseStore, gklog.NewJSONLogger(os.Stdout))
+
 	os.Exit(m.Run())
 }
 
 func TestCreateUser(t *testing.T) {
-	store := NewUserStore(mongoClient)
-
-	expectedUser := &User{
+	expectedUser := &model.User{
 		Name:    "John Doe",
 		EMail:   "john.doe@example.com",
 		PwdHash: "abcde",

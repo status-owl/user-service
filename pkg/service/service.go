@@ -2,11 +2,14 @@ package service
 
 import (
 	"context"
+
+	"github.com/status-owl/user-service/pkg/model"
+	"github.com/status-owl/user-service/pkg/store"
 )
 
 type UserService interface {
 	Create(ctx context.Context, user *RequestedUser) (string, error)
-	FindByID(ctx context.Context, id string) (*User, error)
+	FindByID(ctx context.Context, id string) (*model.User, error)
 }
 
 type RequestedUser struct {
@@ -15,45 +18,17 @@ type RequestedUser struct {
 }
 
 type userService struct {
-	userStore UserStore
+	userStore store.UserStore
 }
 
-func NewService(store UserStore) UserService {
+func NewService(store store.UserStore) UserService {
 	return &userService{userStore: store}
 }
 
 func (s *userService) Create(ctx context.Context, user *RequestedUser) (string, error) {
-	return s.userStore.Create(ctx, &User{Name: user.Name, EMail: user.EMail})
+	return s.userStore.Create(ctx, &model.User{Name: user.Name, EMail: user.EMail})
 }
 
-func (s *userService) FindByID(ctx context.Context, id string) (*User, error) {
+func (s *userService) FindByID(ctx context.Context, id string) (*model.User, error) {
 	return s.userStore.FindByID(ctx, id)
-}
-
-type Role string
-
-const (
-	Admin     Role = "ADMIN"
-	Reporter  Role = "REPORTER"
-	Undefined Role = "UNDEFINED"
-)
-
-func RoleFromString(s string) Role {
-	switch s {
-	case string(Admin):
-		return Admin
-	case string(Reporter):
-		return Reporter
-	default:
-		return Undefined
-	}
-}
-
-// User represents an application user
-type User struct {
-	ID      string
-	Name    string
-	EMail   string
-	PwdHash string
-	Role    Role
 }
