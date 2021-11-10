@@ -1,6 +1,6 @@
 GOBIN=${GOPATH}/bin
 SPEC_API_V1=spec/api-v1.yaml
-SPEC_API_V1_GEN=spec/types.go
+SPEC_API_V1_GEN=pkg/api/types.go
 OAPI_CODEGEN=$(GOBIN)/oapi-codegen
 
 default: help
@@ -17,7 +17,7 @@ $(OAPI_CODEGEN):
 
 $(SPEC_API_V1_GEN): $(OAPI_CODEGEN)
 	@echo "generating models from api spec..." 
-	@oapi-codegen -o $(SPEC_API_V1_GEN) --generate=types --package=spec $(SPEC_API_V1)
+	@oapi-codegen -o $(SPEC_API_V1_GEN) --generate=types --package=api $(SPEC_API_V1)
 
 run: $(SPEC_API_V1_GEN)
 	@go run ./...
