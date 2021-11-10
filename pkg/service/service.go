@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 
 	"github.com/go-kit/kit/metrics"
 	"github.com/go-kit/log"
@@ -18,6 +19,12 @@ type RequestedUser struct {
 	EMail, Name string
 	Pwd         []byte
 }
+
+var (
+	ErrUserExists   = errors.New("user already exists")
+	ErrWriteStorage = errors.New("failed to write to storage")
+	ErrReadStorage  = errors.New("failed to read from storage")
+)
 
 func NewService(store store.UserStore, logger log.Logger, createdUsers, fetchedUsers metrics.Counter) UserService {
 	var svc UserService

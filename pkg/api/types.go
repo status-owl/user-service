@@ -20,17 +20,20 @@ type CreateUserResponse struct {
 	Id string `json:"id"`
 }
 
+// Represents an invalid property in a bad request
+type InvalidParam struct {
+	// Name of the property
+	Name string `json:"name"`
+
+	// Why is the property considered invalid
+	Reason string `json:"reason"`
+}
+
 // Problem defines model for Problem.
 type Problem struct {
 	// A human-readable explanation specific to this occurrence of the problem.
-	Detail        *string `json:"detail,omitempty"`
-	InvalidParams *[]struct {
-		// Name of the property
-		Name *string `json:"name,omitempty"`
-
-		// Why is the property considered invalid
-		Reason *string `json:"reason,omitempty"`
-	} `json:"invalid-params,omitempty"`
+	Detail        *string         `json:"detail,omitempty"`
+	InvalidParams *[]InvalidParam `json:"invalid-params,omitempty"`
 
 	// The HTTP status code
 	Status int `json:"status"`

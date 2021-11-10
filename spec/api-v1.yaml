@@ -88,15 +88,19 @@ components:
         invalid-params:
           type: array
           items:
-            type: object
-            title: InvalidParam
-            description: Represents an invalid property in a bad request
-            properties:
-              name:
-                type: string
-                description: Name of the property
-                example: email
-              reason:
-                type: string
-                description: Why is the property considered invalid
-                example: malformed email address
+            $ref: "#/components/schemas/InvalidParam"
+    InvalidParam:
+      type: object
+      description: Represents an invalid property in a bad request
+      required:
+        - name
+        - reason
+      properties:
+        name:
+          type: string
+          description: Name of the property
+          example: email
+        reason:
+          type: string
+          description: Why is the property considered invalid
+          example: malformed email address
