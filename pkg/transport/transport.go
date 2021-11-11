@@ -48,7 +48,7 @@ func encodeHTTPCreateUserResponse(ctx context.Context, w http.ResponseWriter, re
 	var httpResponse interface{}
 
 	if r.Err != nil {
-		if errors.Is(r.Err, service.ErrUserExists) {
+		if errors.Is(r.Err, service.ErrEmailInUse) {
 			httpStatus = http.StatusBadRequest
 			httpResponse = api.Problem{
 				Status: http.StatusBadRequest,
@@ -71,7 +71,7 @@ func encodeHTTPCreateUserResponse(ctx context.Context, w http.ResponseWriter, re
 		httpResponse = api.CreateUserResponse{Id: r.ID}
 	}
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Type", "application/problem+json; charset=utf-8")
 	w.WriteHeader(httpStatus)
 	return json.NewEncoder(w).Encode(httpResponse)
 }

@@ -22,6 +22,7 @@ type RequestedUser struct {
 
 var (
 	ErrUserExists   = errors.New("user already exists")
+	ErrEmailInUse   = errors.New("user with requested email address already exists")
 	ErrWriteStorage = errors.New("failed to write to storage")
 	ErrReadStorage  = errors.New("failed to read from storage")
 )
@@ -41,7 +42,29 @@ type userService struct {
 }
 
 func (s *userService) Create(ctx context.Context, user *RequestedUser) (string, error) {
+	// check if the user with given email already exists
+	userExists, err := s.hasUserWithEMail(ctx, user.EMail)
+	if err != nil {
+		return "", err
+	}
+
+	if userExists {
+		return "", ErrEmailInUse
+	}
+
 	return s.userStore.Create(ctx, &model.User{Name: user.Name, EMail: user.EMail})
+}
+
+func (s *userService) hasUserWithEMail(ctx context.Context, email string) (bool, error) {
+	_, err := s.userStore.FindByEMail(ctx, email)
+	if err != nil {
+		if err == store.ErrNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
 }
 
 func (s *userService) FindByID(ctx context.Context, id string) (*model.User, error) {

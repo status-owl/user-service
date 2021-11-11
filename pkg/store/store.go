@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -10,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
+	"github.com/go-kit/log"
 	"github.com/status-owl/user-service/pkg/model"
 )
 
@@ -17,7 +19,12 @@ import (
 type UserStore interface {
 	Create(ctx context.Context, user *model.User) (string, error)
 	FindByID(ctx context.Context, id string) (*model.User, error)
+	FindByEMail(ctx context.Context, email string) (*model.User, error)
 }
+
+var (
+	ErrNotFound = errors.New("user not found")
+)
 
 // mongoUserStore implements UserStore using mongodb as backing db
 type mongoUserStore struct {
@@ -29,13 +36,13 @@ const (
 	collectionName = "users"
 )
 
-func NewUserStore(client *mongo.Client) (UserStore, error) {
-	store := mongoUserStore{client}
+func NewUserStore(client *mongo.Client, logger log.Logger) (UserStore, error) {
+	store := &mongoUserStore{client}
 	if err := store.createIndexes(); err != nil {
 		return nil, err
 	}
 
-	return &store, nil
+	return LoggingMiddleware(logger)(store), nil
 }
 
 type mongoUser struct {
@@ -47,7 +54,7 @@ type mongoUser struct {
 }
 
 var (
-	ErrIndexCreation = errors.New("Failed to create index")
+	ErrIndexCreation = errors.New("failed to create index")
 )
 
 // newMongoUser creates a new mongoUser from given user instance
@@ -111,15 +118,32 @@ func (s *mongoUserStore) Create(ctx context.Context, user *model.User) (string, 
 }
 
 func (s *mongoUserStore) FindByID(ctx context.Context, id string) (*model.User, error) {
-	c := s.col()
 	var u mongoUser
+	// first check if the id can be converted to a mongo's object id
+	// if not - pretend that the user doesn't exist
 	objectId, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return nil, err
+		return nil, ErrNotFound
 	}
-	err = c.FindOne(ctx, bson.M{"_id": objectId}).Decode(&u)
+
+	err = s.col().FindOne(ctx, bson.M{"_id": objectId}).Decode(&u)
 	if err != nil {
-		return nil, err
+		if err == mongo.ErrNoDocuments {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to find user by id: %w", err)
+	}
+
+	return u.toUser(), nil
+}
+
+func (s *mongoUserStore) FindByEMail(ctx context.Context, email string) (*model.User, error) {
+	var u mongoUser
+	if err := s.col().FindOne(ctx, bson.M{"email": email}).Decode(&u); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to find user by email: %w", err)
 	}
 
 	return u.toUser(), nil

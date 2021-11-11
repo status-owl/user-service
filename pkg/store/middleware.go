@@ -11,16 +11,20 @@ import (
 
 // contains logging middleware for the UserStore
 
+type Middleware func(UserStore) UserStore
+
+func LoggingMiddleware(logger log.Logger) Middleware {
+	return func(next UserStore) UserStore {
+		return &loggingUserStore{
+			logger: log.WithPrefix(logger, "interface", "UserStore"),
+			next:   next,
+		}
+	}
+}
+
 type loggingUserStore struct {
 	logger log.Logger
 	next   UserStore
-}
-
-func NewLoggingUserStore(next UserStore, logger log.Logger) UserStore {
-	return &loggingUserStore{
-		logger: log.WithPrefix(logger, "interface", "UserStore"),
-		next:   next,
-	}
 }
 
 func (s *loggingUserStore) Create(ctx context.Context, user *model.User) (id string, err error) {
@@ -57,5 +61,25 @@ func (s *loggingUserStore) FindByID(ctx context.Context, id string) (user *model
 	}(time.Now())
 
 	user, err = s.next.FindByID(ctx, id)
+	return
+}
+
+func (s *loggingUserStore) FindByEMail(ctx context.Context, email string) (user *model.User, err error) {
+	l := log.WithPrefix(s.logger, "method", "FindByID")
+	level.Debug(l).Log(
+		"email", email,
+		"msg", "about to find a user by email",
+	)
+
+	defer func(begin time.Time) {
+		level.Info(l).Log(
+			"email", email,
+			"user", user,
+			"err", err,
+			"took", time.Since(begin),
+		)
+	}(time.Now())
+
+	user, err = s.next.FindByEMail(ctx, email)
 	return
 }

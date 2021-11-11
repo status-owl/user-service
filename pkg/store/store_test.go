@@ -37,11 +37,10 @@ func TestMain(m *testing.M) {
 		log.Fatalf("failed to establish a mongodb connection: %s", err.Error())
 	}
 
-	baseStore, err := NewUserStore(mongoClient)
+	store, err = NewUserStore(mongoClient, gklog.NewJSONLogger(os.Stdout))
 	if err != nil {
 		log.Fatalf("failed to create the userStore: %s", err.Error())
 	}
-	store = NewLoggingUserStore(baseStore, gklog.NewJSONLogger(os.Stdout))
 
 	os.Exit(m.Run())
 }
@@ -59,15 +58,38 @@ func TestCreateUser(t *testing.T) {
 
 	// now we expect that the actualUser exists
 	actualUser, err := store.FindByID(context.Background(), id)
-	if err != nil {
-		t.Error(err)
-	}
-
+	assert.Nil(t, err)
 	assert.Equal(t, id, actualUser.ID)
 	assert.NotEqual(t, id, primitive.NilObjectID.Hex(), "make sure the id was generated")
 	assert.Equal(t, expectedUser.Name, actualUser.Name)
 	assert.Equal(t, expectedUser.EMail, actualUser.EMail)
 	assert.Equal(t, expectedUser.PwdHash, actualUser.PwdHash)
+}
+
+func TestFindByEmail(t *testing.T) {
+	expectedUser := &model.User{
+		Name:    "Marry Doe",
+		EMail:   "mary.doe@example.com",
+		PwdHash: "12345",
+	}
+
+	id, err := store.Create(context.Background(), expectedUser)
+	assert.Nil(t, err)
+
+	actualUser, err := store.FindByEMail(context.Background(), expectedUser.EMail)
+	assert.Nil(t, err)
+	assert.Equal(t, id, actualUser.ID)
+	assert.Equal(t, expectedUser.EMail, actualUser.EMail)
+	assert.Equal(t, expectedUser.Name, actualUser.Name)
+	assert.Equal(t, expectedUser.PwdHash, actualUser.PwdHash)
+
+	_, err = store.FindByEMail(context.Background(), "not-existing-user@example.com")
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestFindByID(t *testing.T) {
+	_, err := store.FindByID(context.Background(), "123")
+	assert.ErrorIs(t, err, ErrNotFound)
 }
 
 type mongoContainer struct {

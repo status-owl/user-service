@@ -30,3 +30,7 @@ clean:
 	@echo "cleaning up..."
 	@rm -f $(SPEC_MODELS)
 	@go clean
+
+build:
+	@echo "Building binary..."
+	@go build ./...

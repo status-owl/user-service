@@ -5,8 +5,10 @@ go 1.17
 require (
 	github.com/go-kit/kit v0.12.0
 	github.com/go-kit/log v0.2.0
+	github.com/gorilla/mux v1.8.0
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/pkg/errors v0.9.1
+	github.com/prometheus/client_golang v1.11.0
 	github.com/sony/gobreaker v0.5.0
 	github.com/stretchr/testify v1.7.0
 	github.com/testcontainers/testcontainers-go v0.11.1
@@ -19,7 +21,9 @@ require (
 	github.com/Microsoft/go-winio v0.4.17-0.20210211115548-6eac466e5fa3 // indirect
 	github.com/Microsoft/hcsshim v0.8.16 // indirect
 	github.com/afex/hystrix-go v0.0.0-20180502004556-fa1af6a1f4f5 // indirect
+	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
+	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/containerd/cgroups v0.0.0-20210114181951-8a68de567b68 // indirect
 	github.com/containerd/containerd v1.5.0-beta.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -34,9 +38,9 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.1 // indirect
 	github.com/google/uuid v1.2.0 // indirect
-	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/klauspost/compress v1.13.6 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
+	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
 	github.com/moby/sys/mount v0.2.0 // indirect
 	github.com/moby/sys/mountinfo v0.4.1 // indirect
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
@@ -45,6 +49,9 @@ require (
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/opencontainers/runc v1.0.0-rc93 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/prometheus/client_model v0.2.0 // indirect
+	github.com/prometheus/common v0.30.0 // indirect
+	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/rogpeppe/go-internal v1.8.0 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/streadway/handy v0.0.0-20200128134331-0f66f006fb2e // indirect
