@@ -2,15 +2,17 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/go-kit/kit/metrics"
 	"github.com/go-kit/kit/metrics/prometheus"
 	"github.com/go-kit/log"
-	"github.com/gorilla/mux"
 	"github.com/opentracing/opentracing-go"
 	stdprometheus "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -25,13 +27,38 @@ import (
 
 func main() {
 
-	logger := log.NewJSONLogger(os.Stdout)
+	var (
+		metricsPort = flag.Int("metrics-port", 8081, "http port serving metrics")
+		httpPort    = flag.Int("http-port", 8080, "http port")
+		jsonLogger  = flag.Bool("json-logger", true, "if true - log as json")
+		mongoDbUri  = flag.String("mongodb-uri", "", "mongodb connection uri")
+		help        = flag.Bool("help", false, "print usage and exit")
+	)
+	flag.Parse()
+	if *help {
+		flag.Usage()
+		os.Exit(0)
+	}
 
-	mongoClient, err := connectMongo("mongodb://root:secret@localhost:27017")
+	var logger log.Logger
+	if *jsonLogger {
+		logger = log.NewJSONLogger(os.Stdout)
+	} else {
+		logger = log.NewLogfmtLogger(os.Stdout)
+	}
+
+	mongoClient, err := connectMongo(*mongoDbUri)
 	if err != nil {
 		logger.Log("err", err, "msg", "failed to establish a connection to mongodb")
 		os.Exit(1)
 	}
+
+	defer func() {
+		if err = mongoClient.Disconnect(context.Background()); err != nil {
+			logger.Log("err", err, "msg", "failed to disconnect from mongodb")
+			os.Exit(1)
+		}
+	}()
 
 	userStore, err := store.NewUserStore(mongoClient, logger)
 	if err != nil {
@@ -69,18 +96,40 @@ func main() {
 
 	endpoints := endpoint.NewEndpoints(svc, logger, durationHistogram, tracer)
 	httpHandler := transport.NewHTTPHandler(endpoints, tracer, logger)
-	listener, err := net.Listen("tcp", "127.0.0.1:8080")
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *httpPort))
 	if err != nil {
-		logger.Log("err", err, "msg", "failed to listen on port 8080")
+		logger.Log("err", err, "msg", fmt.Sprintf("failed to listen on port %d", *httpPort))
 		os.Exit(1)
 	}
 
-	httpHandler.(*mux.Router).Handle("/metrics", promhttp.Handler())
-	logger.Log("msg", "listening on port 8080...")
-	if err := http.Serve(listener, httpHandler); err != nil {
-		logger.Log("err", err, "msg", "failed to start http server")
+	// metrics listener
+	http.DefaultServeMux.Handle("/metrics", promhttp.Handler())
+	metricsListener, err := net.Listen("tcp", fmt.Sprintf(":%d", *metricsPort))
+	if err != nil {
+		logger.Log("err", err, fmt.Sprintf("failed to listen omn port %d", *metricsPort))
 		os.Exit(1)
 	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		logger.Log("msg", fmt.Sprintf("listening on metrics port %d...", *metricsPort))
+		if err := http.Serve(metricsListener, http.DefaultServeMux); err != nil {
+			logger.Log("err", err, "msg", "failed to start metrics http server")
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		logger.Log("msg", fmt.Sprintf("listening on application port %d...", *httpPort))
+		if err := http.Serve(listener, httpHandler); err != nil {
+			logger.Log("err", err, "msg", "failed to start application http server")
+		}
+	}()
+
+	wg.Wait()
 }
 
 func pingMongo(client *mongo.Client) error {

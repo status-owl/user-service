@@ -15,20 +15,20 @@ type Middleware func(UserStore) UserStore
 
 func LoggingMiddleware(logger log.Logger) Middleware {
 	return func(next UserStore) UserStore {
-		return &loggingUserStore{
+		return &loggingMiddleware{
 			logger: log.WithPrefix(logger, "interface", "UserStore"),
 			next:   next,
 		}
 	}
 }
 
-type loggingUserStore struct {
+type loggingMiddleware struct {
 	logger log.Logger
 	next   UserStore
 }
 
-func (s *loggingUserStore) Create(ctx context.Context, user *model.User) (id string, err error) {
-	l := log.WithPrefix(s.logger, "method", "Create")
+func (mw *loggingMiddleware) Create(ctx context.Context, user *model.User) (id string, err error) {
+	l := log.WithPrefix(mw.logger, "method", "Create")
 	level.Debug(l).Log("user", user, "msg", "about to create a user")
 
 	defer func(begin time.Time) {
@@ -40,12 +40,12 @@ func (s *loggingUserStore) Create(ctx context.Context, user *model.User) (id str
 		)
 	}(time.Now())
 
-	id, err = s.next.Create(ctx, user)
+	id, err = mw.next.Create(ctx, user)
 	return
 }
 
-func (s *loggingUserStore) FindByID(ctx context.Context, id string) (user *model.User, err error) {
-	l := log.WithPrefix(s.logger, "method", "FindByID")
+func (mw *loggingMiddleware) FindByID(ctx context.Context, id string) (user *model.User, err error) {
+	l := log.WithPrefix(mw.logger, "method", "FindByID")
 	level.Debug(l).Log(
 		"id", id,
 		"msg", "about to find a user by id",
@@ -60,12 +60,12 @@ func (s *loggingUserStore) FindByID(ctx context.Context, id string) (user *model
 		)
 	}(time.Now())
 
-	user, err = s.next.FindByID(ctx, id)
+	user, err = mw.next.FindByID(ctx, id)
 	return
 }
 
-func (s *loggingUserStore) FindByEMail(ctx context.Context, email string) (user *model.User, err error) {
-	l := log.WithPrefix(s.logger, "method", "FindByID")
+func (mw *loggingMiddleware) FindByEMail(ctx context.Context, email string) (user *model.User, err error) {
+	l := log.WithPrefix(mw.logger, "method", "FindByID")
 	level.Debug(l).Log(
 		"email", email,
 		"msg", "about to find a user by email",
@@ -80,6 +80,40 @@ func (s *loggingUserStore) FindByEMail(ctx context.Context, email string) (user 
 		)
 	}(time.Now())
 
-	user, err = s.next.FindByEMail(ctx, email)
+	user, err = mw.next.FindByEMail(ctx, email)
+	return
+}
+
+func (mw *loggingMiddleware) HasUsersWithRole(ctx context.Context, role model.Role) (exist bool, err error) {
+	l := log.WithPrefix(mw.logger, "method", "HasUserWithRole")
+	level.Debug(l).Log(
+		"role", role,
+		"msg", "about to determine if any users in a particular role do exist",
+	)
+
+	defer func() {
+		level.Info(l).Log(
+			"role", role,
+			"exist", exist,
+			"err", err,
+		)
+	}()
+
+	exist, err = mw.next.HasUsersWithRole(ctx, role)
+	return
+}
+
+func (mw *loggingMiddleware) clear(ctx context.Context) (count int64, err error) {
+	l := log.WithPrefix(mw.logger, "method", "clear")
+	level.Debug(l).Log("msg", "about to delete all users")
+
+	defer func() {
+		level.Info(l).Log(
+			"err", err,
+			"count", count,
+		)
+	}()
+
+	count, err = mw.next.clear(ctx)
 	return
 }

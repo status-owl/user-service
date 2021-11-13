@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/status-owl/user-service/pkg/model"
@@ -30,7 +31,11 @@ func TestMain(m *testing.M) {
 		log.Fatalf("failed to initialize mongodb via docker: %s", err.Error())
 	}
 
-	defer mongoContainer.Terminate(ctx)
+	defer func() {
+		if err = mongoContainer.Terminate(ctx); err != nil {
+			log.Fatalf("failed to terminate mongodb container: %s", err.Error())
+		}
+	}()
 
 	mongoClient, err = mongo.Connect(ctx, options.Client().ApplyURI(mongoContainer.URI))
 	if err != nil {
@@ -92,9 +97,70 @@ func TestFindByID(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
+func TestHasUserWithRole(t *testing.T) {
+	// clear db
+	// make sure a admin user does not exist
+	// writes a couple of users with one of them being admin
+	// makes sure at least one admin user does exist
+	clearDB()
+
+	a := assert.New(t)
+
+	// don't expect a admin user
+	exist, err := store.HasUsersWithRole(context.Background(), model.Admin)
+	a.Nil(err)
+	a.False(exist)
+
+	// write users
+	for _, user := range fixturesAllUsers {
+		_, err := store.Create(context.Background(), user)
+		a.Nil(err)
+	}
+
+	// expect an admin
+	exist, err = store.HasUsersWithRole(context.Background(), model.Admin)
+	a.Nil(err)
+	a.True(exist)
+}
+
+func TestClear(t *testing.T) {
+	a := assert.New(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	// persist users
+	for _, u := range fixturesAllUsers {
+		_, err := store.FindByEMail(ctx, u.EMail)
+		if err == ErrNotFound {
+			_, err = store.Create(ctx, u)
+			a.Nil(err)
+			continue
+		}
+		a.Nil(err)
+	}
+
+	count, err := store.clear(ctx)
+	a.Equal(count, int64(len(fixturesAllUsers)))
+	a.Nil(err)
+
+	// make sure no user does exist
+	for _, u := range fixturesAllUsers {
+		_, err := store.FindByID(ctx, u.ID)
+		a.ErrorIs(err, ErrNotFound)
+	}
+}
+
 type mongoContainer struct {
 	tc.Container
 	URI string
+}
+
+func clearDB() {
+	_, err := store.clear(context.Background())
+	if err != nil {
+		panic(err)
+	}
 }
 
 func setupMongo(ctx context.Context) (*mongoContainer, error) {
@@ -110,7 +176,7 @@ func setupMongo(ctx context.Context) (*mongoContainer, error) {
 		WaitingFor: wait.ForLog("Waiting for connections"),
 	}
 
-	mongo, err := tc.GenericContainer(ctx, tc.GenericContainerRequest{
+	container, err := tc.GenericContainer(ctx, tc.GenericContainerRequest{
 		ContainerRequest: req,
 		Started:          true,
 	})
@@ -119,18 +185,62 @@ func setupMongo(ctx context.Context) (*mongoContainer, error) {
 		return nil, err
 	}
 
-	mappedPort, err := mongo.MappedPort(ctx, "27017")
+	mappedPort, err := container.MappedPort(ctx, "27017")
 	if err != nil {
-		mongo.Terminate(ctx)
+		if err = container.Terminate(ctx); err != nil {
+			panic(err)
+		}
 		return nil, errors.Wrap(err, "failed to determine mapped port")
 	}
 
-	host, err := mongo.Host(ctx)
+	host, err := container.Host(ctx)
 	if err != nil {
-		mongo.Terminate(ctx)
+		if err = container.Terminate(ctx); err != nil {
+			panic(err)
+		}
 		return nil, errors.Wrap(err, "failed to determine host")
 	}
 
 	uri := fmt.Sprintf("mongodb://%s:%s@%s:%s", user, pwd, host, mappedPort.Port())
-	return &mongoContainer{Container: mongo, URI: uri}, nil
+	return &mongoContainer{Container: container, URI: uri}, nil
+}
+
+var fixtures = struct {
+	users struct {
+		undefined, admin, reporter, withoutRole *model.User
+	}
+}{
+	users: struct{ undefined, admin, reporter, withoutRole *model.User }{
+		undefined: &model.User{
+			Name:    "John Doe",
+			EMail:   "john.doe@example.com",
+			PwdHash: "abcde",
+			Role:    model.Undefined,
+		},
+		admin: &model.User{
+			Name:    "Mary Doe",
+			EMail:   "mary.doe@example.com",
+			PwdHash: "fghjk",
+			Role:    model.Admin,
+		},
+		reporter: &model.User{
+			Name:    "Fritz Nebel",
+			EMail:   "fritz.nebel@example.com",
+			PwdHash: "wowowo",
+			Role:    model.Reporter,
+		},
+		withoutRole: &model.User{
+			Name:    "Mark Defoe",
+			EMail:   "make.d@example.com",
+			PwdHash: "abcde",
+		},
+	},
+}
+
+// fixturesAllUsers contains all users from the fixture
+var fixturesAllUsers = []*model.User{
+	fixtures.users.undefined,
+	fixtures.users.admin,
+	fixtures.users.reporter,
+	fixtures.users.withoutRole,
 }

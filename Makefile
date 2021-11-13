@@ -20,7 +20,7 @@ $(SPEC_API_V1_GEN): $(OAPI_CODEGEN)
 	@oapi-codegen -o $(SPEC_API_V1_GEN) --generate=types --package=api $(SPEC_API_V1)
 
 run: $(SPEC_API_V1_GEN)
-	@go run ./...
+	@go run ./...  $(ARGS)
 
 test: $(SPEC_API_V1_GEN)
 	@echo "Running tests..."

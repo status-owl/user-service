@@ -11,19 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
-	"github.com/go-kit/log"
 	"github.com/status-owl/user-service/pkg/model"
-)
-
-// UserStore is responsible for storing and fetching of users
-type UserStore interface {
-	Create(ctx context.Context, user *model.User) (string, error)
-	FindByID(ctx context.Context, id string) (*model.User, error)
-	FindByEMail(ctx context.Context, email string) (*model.User, error)
-}
-
-var (
-	ErrNotFound = errors.New("user not found")
 )
 
 // mongoUserStore implements UserStore using mongodb as backing db
@@ -35,15 +23,6 @@ const (
 	databaseName   = "user-service"
 	collectionName = "users"
 )
-
-func NewUserStore(client *mongo.Client, logger log.Logger) (UserStore, error) {
-	store := &mongoUserStore{client}
-	if err := store.createIndexes(); err != nil {
-		return nil, err
-	}
-
-	return LoggingMiddleware(logger)(store), nil
-}
 
 type mongoUser struct {
 	ID      primitive.ObjectID `bson:"_id"`
@@ -107,6 +86,16 @@ func (s *mongoUserStore) createIndexes() error {
 	return nil
 }
 
+// clear removes all users from the collection
+func (s *mongoUserStore) clear(ctx context.Context) (int64, error) {
+	result, err := s.col().DeleteMany(ctx, bson.M{})
+	if err != nil {
+		return 0, fmt.Errorf("failed to clear collection %s: %w", collectionName, err)
+	}
+
+	return result.DeletedCount, nil
+}
+
 func (s *mongoUserStore) Create(ctx context.Context, user *model.User) (string, error) {
 	c := s.col()
 	result, err := c.InsertOne(ctx, newMongoUser(user))
@@ -147,4 +136,29 @@ func (s *mongoUserStore) FindByEMail(ctx context.Context, email string) (*model.
 	}
 
 	return u.toUser(), nil
+}
+
+func (s *mongoUserStore) HasUsersWithRole(ctx context.Context, role model.Role) (bool, error) {
+	matchStage := bson.D{{"$match", bson.D{{"role", string(role)}}}}
+	countStage := bson.D{{"$count", "count"}}
+
+	cursor, err := s.col().Aggregate(ctx, mongo.Pipeline{matchStage, countStage})
+	if err != nil {
+		return false, fmt.Errorf("failed to execute pipeline: %w", err)
+	}
+
+	var results []bson.M
+	err = cursor.All(ctx, &results)
+	if err != nil {
+		return false, fmt.Errorf("failed to extract pipeline results: %w", err)
+	}
+
+	if len(results) == 0 {
+		return false, nil
+	}
+
+	count := results[0]["count"].(int32)
+	fmt.Println(count)
+
+	return count > 0, nil
 }

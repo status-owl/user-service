@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/go-kit/kit/metrics"
 	"github.com/go-kit/log"
@@ -20,11 +21,10 @@ type RequestedUser struct {
 	Pwd         []byte
 }
 
+const storeTimeout = 5 * time.Second
+
 var (
-	ErrUserExists   = errors.New("user already exists")
-	ErrEmailInUse   = errors.New("user with requested email address already exists")
-	ErrWriteStorage = errors.New("failed to write to storage")
-	ErrReadStorage  = errors.New("failed to read from storage")
+	ErrEmailInUse = errors.New("user with requested email address already exists")
 )
 
 func NewService(store store.UserStore, logger log.Logger, createdUsers, fetchedUsers metrics.Counter) UserService {
@@ -41,7 +41,19 @@ type userService struct {
 	userStore store.UserStore
 }
 
+func (s *userService) initialize() error {
+	_, cancel := context.WithTimeout(context.Background(), storeTimeout)
+	defer cancel()
+
+	// 1. look for admin users
+	// 2. if there are not any - create one with random password and log it
+	return nil
+}
+
 func (s *userService) Create(ctx context.Context, user *RequestedUser) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, storeTimeout)
+	defer cancel()
+
 	// check if the user with given email already exists
 	userExists, err := s.hasUserWithEMail(ctx, user.EMail)
 	if err != nil {
@@ -68,5 +80,8 @@ func (s *userService) hasUserWithEMail(ctx context.Context, email string) (bool,
 }
 
 func (s *userService) FindByID(ctx context.Context, id string) (*model.User, error) {
+	ctx, cancel := context.WithTimeout(ctx, storeTimeout)
+	defer cancel()
+
 	return s.userStore.FindByID(ctx, id)
 }
