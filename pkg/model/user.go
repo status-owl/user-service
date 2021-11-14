@@ -24,6 +24,5 @@ type User struct {
 	ID      string
 	Name    string
 	EMail   string
-	PwdHash string
 	Role    Role
 }

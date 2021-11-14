@@ -10,9 +10,6 @@ type CreateUserRequest struct {
 
 	// User name
 	Name string `json:"name"`
-
-	// Password
-	Password string `json:"password"`
 }
 
 // CreateUserResponse defines model for CreateUserResponse.
@@ -43,6 +40,18 @@ type Problem struct {
 
 	// A URI reference that identifies the problem type
 	Type *string `json:"type,omitempty"`
+}
+
+// User defines model for User.
+type User struct {
+	// Email address
+	Email string `json:"email"`
+
+	// User ID
+	Id string `json:"id"`
+
+	// User name
+	Name *string `json:"name,omitempty"`
 }
 
 // CreateUserJSONBody defines parameters for CreateUser.

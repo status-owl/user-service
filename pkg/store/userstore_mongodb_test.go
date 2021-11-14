@@ -51,11 +51,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestCreateUser(t *testing.T) {
-	expectedUser := &model.User{
-		Name:    "John Doe",
-		EMail:   "john.doe@example.com",
-		PwdHash: "abcde",
-	}
+	expectedUser := fixtures.users.withoutRole
 	id, err := store.Create(context.Background(), expectedUser)
 	if err != nil {
 		t.Error(err)
@@ -68,15 +64,11 @@ func TestCreateUser(t *testing.T) {
 	assert.NotEqual(t, id, primitive.NilObjectID.Hex(), "make sure the id was generated")
 	assert.Equal(t, expectedUser.Name, actualUser.Name)
 	assert.Equal(t, expectedUser.EMail, actualUser.EMail)
-	assert.Equal(t, expectedUser.PwdHash, actualUser.PwdHash)
 }
 
 func TestFindByEmail(t *testing.T) {
-	expectedUser := &model.User{
-		Name:    "Marry Doe",
-		EMail:   "mary.doe@example.com",
-		PwdHash: "12345",
-	}
+	clearDB()
+	expectedUser := fixtures.users.withoutRole
 
 	id, err := store.Create(context.Background(), expectedUser)
 	assert.Nil(t, err)
@@ -86,7 +78,6 @@ func TestFindByEmail(t *testing.T) {
 	assert.Equal(t, id, actualUser.ID)
 	assert.Equal(t, expectedUser.EMail, actualUser.EMail)
 	assert.Equal(t, expectedUser.Name, actualUser.Name)
-	assert.Equal(t, expectedUser.PwdHash, actualUser.PwdHash)
 
 	_, err = store.FindByEMail(context.Background(), "not-existing-user@example.com")
 	assert.ErrorIs(t, err, ErrNotFound)
@@ -214,25 +205,21 @@ var fixtures = struct {
 		undefined: &model.User{
 			Name:    "John Doe",
 			EMail:   "john.doe@example.com",
-			PwdHash: "abcde",
 			Role:    model.Undefined,
 		},
 		admin: &model.User{
 			Name:    "Mary Doe",
 			EMail:   "mary.doe@example.com",
-			PwdHash: "fghjk",
 			Role:    model.Admin,
 		},
 		reporter: &model.User{
 			Name:    "Fritz Nebel",
 			EMail:   "fritz.nebel@example.com",
-			PwdHash: "wowowo",
 			Role:    model.Reporter,
 		},
 		withoutRole: &model.User{
 			Name:    "Mark Defoe",
 			EMail:   "make.d@example.com",
-			PwdHash: "abcde",
 		},
 	},
 }

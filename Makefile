@@ -28,7 +28,7 @@ test: $(SPEC_API_V1_GEN)
 
 clean:
 	@echo "cleaning up..."
-	@rm -f $(SPEC_MODELS)
+	@rm -f $(SPEC_API_V1_GEN)
 	@go clean
 
 build:

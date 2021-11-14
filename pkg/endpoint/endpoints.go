@@ -49,7 +49,6 @@ func MakeCreateUserEndpoint(s service.UserService) endpoint.Endpoint {
 		id, err := s.Create(ctx, &service.RequestedUser{
 			EMail: req.Email,
 			Name:  req.Name,
-			Pwd:   []byte(req.Password),
 		})
 		return CreateUserResponse{ID: id, Err: err}, nil
 	}

@@ -43,7 +43,6 @@ func newMongoUser(user *model.User) *mongoUser {
 		ID:      primitive.NewObjectID(),
 		Name:    user.Name,
 		EMail:   user.EMail,
-		PwdHash: user.PwdHash,
 		Role:    string(user.Role),
 	}
 }
@@ -53,7 +52,6 @@ func (u *mongoUser) toUser() *model.User {
 		ID:      u.ID.Hex(),
 		Name:    u.Name,
 		EMail:   u.EMail,
-		PwdHash: u.PwdHash,
 		Role:    model.RoleFromString(u.Role),
 	}
 }

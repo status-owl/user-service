@@ -41,15 +41,6 @@ type userService struct {
 	userStore store.UserStore
 }
 
-func (s *userService) initialize() error {
-	_, cancel := context.WithTimeout(context.Background(), storeTimeout)
-	defer cancel()
-
-	// 1. look for admin users
-	// 2. if there are not any - create one with random password and log it
-	return nil
-}
-
 func (s *userService) Create(ctx context.Context, user *RequestedUser) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, storeTimeout)
 	defer cancel()
