@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  mongodb:
+    image: "mongo:4.4.2-bionic"
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: secret
+
+  zipkin:
+    image: "openzipkin/zipkin"
+    ports:
+      - "9411:9411"
+
+  nats:
+    image: "nats"
+    command:
+      - "-js"
+    ports:
+      - "4222:4222"

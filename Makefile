@@ -31,6 +31,14 @@ clean:
 	@rm -f $(SPEC_API_V1_GEN)
 	@go clean
 
+services-up:
+	@echo "starting services..."
+	@docker compose -f docker-compose.yaml up -d
+
+services-down:
+	@echo "stopping services..."
+	@docker compose -f docker-compose.yaml down
+
 build:
 	@echo "Building binary..."
 	@go build ./...
