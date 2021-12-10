@@ -3,7 +3,8 @@ package store
 import (
 	"context"
 	"errors"
-	"github.com/go-kit/log"
+
+	"github.com/rs/zerolog"
 	"github.com/status-owl/user-service/pkg/model"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -14,6 +15,8 @@ type UserStore interface {
 	FindByID(ctx context.Context, id string) (*model.User, error)
 	FindByEMail(ctx context.Context, email string) (*model.User, error)
 	HasUsersWithRole(ctx context.Context, role model.Role) (bool, error)
+	Delete(ctx context.Context, id string) error
+
 	clear(ctx context.Context) (int64, error)
 }
 
@@ -22,7 +25,7 @@ var (
 	ErrNotFound = errors.New("user not found")
 )
 
-func NewUserStore(client *mongo.Client, logger log.Logger) (UserStore, error) {
+func NewUserStore(client *mongo.Client, logger zerolog.Logger) (UserStore, error) {
 	store := &mongoUserStore{client}
 	if err := store.createIndexes(); err != nil {
 		return nil, err

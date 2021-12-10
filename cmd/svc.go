@@ -10,16 +10,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/metrics"
-	"github.com/go-kit/kit/metrics/prometheus"
-	"github.com/go-kit/log"
-	"github.com/opentracing/opentracing-go"
-	stdprometheus "github.com/prometheus/client_golang/prometheus"
+	"github.com/nats-io/nats.go"
+
+	"github.com/rs/zerolog"
+
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/status-owl/user-service/pkg/endpoint"
+
 	"github.com/status-owl/user-service/pkg/service"
 	"github.com/status-owl/user-service/pkg/store"
 	"github.com/status-owl/user-service/pkg/transport"
+
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
@@ -32,6 +32,7 @@ func main() {
 		httpPort    = flag.Int("http-port", 8080, "http port")
 		jsonLogger  = flag.Bool("json-logger", true, "if true - log as json")
 		mongoDbUri  = flag.String("mongodb-uri", "", "mongodb connection uri")
+		natsUrl     = flag.String("nats-url", nats.DefaultURL, "URL for connection to NATS")
 		help        = flag.Bool("help", false, "print usage and exit")
 	)
 	flag.Parse()
@@ -40,65 +41,102 @@ func main() {
 		os.Exit(0)
 	}
 
-	var logger log.Logger
+	var logger zerolog.Logger
 	if *jsonLogger {
-		logger = log.NewJSONLogger(os.Stdout)
+		logger = zerolog.New(os.Stdout).With().Caller().Logger()
 	} else {
-		logger = log.NewLogfmtLogger(os.Stdout)
+		logger = zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout}).With().Caller().Logger()
+	}
+
+	natsConn, err := nats.Connect(*natsUrl)
+	if err != nil {
+		logger.Error().
+			Err(err).
+			Str("url", *natsUrl).
+			Msg("failed to establish connection to NATS server")
+
+		os.Exit(1)
+	}
+
+	js, err := natsConn.JetStream()
+	if err != nil {
+		logger.Error().
+			Err(err).
+			Msg("failed to create a JetStream")
+
+		os.Exit(1)
+	}
+
+	logger.Info().
+		Str("url", *natsUrl).
+		Msg("configured nats")
+
+	info, err := js.StreamInfo("USERS")
+	if err != nil {
+		logger.Error().
+			Err(err).
+			Str("url", *natsUrl).
+			Msg("failed to get stream info from nats server or stream doesn't exist")
+	}
+
+	if info == nil {
+		info, err = js.AddStream(&nats.StreamConfig{
+			Name:     "USERS",
+			Subjects: []string{"USERS.*"},
+		})
+
+		if err != nil {
+			logger.Error().
+				Err(err).
+				Str("url", *natsUrl).
+				Msg("failed to create USERS streams on nats server")
+
+			os.Exit(1)
+		}
+
+		logger.Info().
+			Str("name", info.Cluster.Name).
+			Strs("subjects", info.Config.Subjects).
+			Msg("created stream")
 	}
 
 	mongoClient, err := connectMongo(*mongoDbUri)
 	if err != nil {
-		logger.Log("err", err, "msg", "failed to establish a connection to mongodb")
+		logger.Error().
+			Err(err).
+			Msg("failed to establish a connection to mongodb")
+
 		os.Exit(1)
 	}
 
 	defer func() {
 		if err = mongoClient.Disconnect(context.Background()); err != nil {
-			logger.Log("err", err, "msg", "failed to disconnect from mongodb")
+			logger.Error().
+				Err(err).
+				Msg("failed to disconnect from mongodb")
+
 			os.Exit(1)
 		}
 	}()
 
 	userStore, err := store.NewUserStore(mongoClient, logger)
 	if err != nil {
-		logger.Log("err", err, "msg", "failed to create a user store")
+		logger.Error().
+			Err(err).
+			Msg("failed to create a user store")
+
 		os.Exit(1)
 	}
 
-	tracer := opentracing.GlobalTracer()
-	opentracing.SetGlobalTracer(tracer)
-
-	var usersCreatedCounter, usersFetchedCounter metrics.Counter
-	{
-		usersCreatedCounter = prometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "status_owl",
-			Subsystem: "user_service",
-			Name:      "users_created",
-			Help:      "Total count of created users",
-		}, []string{"status"})
-
-		usersFetchedCounter = prometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "status_owl",
-			Subsystem: "user_service",
-			Name:      "users_fetched",
-			Help:      "Total count of fetched users",
-		}, []string{"status"})
-	}
-
-	svc := service.NewService(userStore, logger, usersCreatedCounter, usersFetchedCounter)
-	durationHistogram := prometheus.NewSummaryFrom(stdprometheus.SummaryOpts{
-		Namespace: "status_owl",
-		Subsystem: "user_service",
-		Name:      "request_duration_seconds",
-		Help:      "Request duration in seconds.",
-	}, []string{"method", "success"})
-
-	endpoints := endpoint.NewEndpoints(svc, logger, durationHistogram, tracer)
-	httpHandler := transport.NewHTTPHandler(endpoints, tracer, logger)
+	svc := service.NewService(userStore, logger, js)
+	httpHandler := transport.NewHTTPHandler(svc)
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *httpPort))
 	if err != nil {
-		logger.Log("err", err, "msg", fmt.Sprintf("failed to listen on port %d", *httpPort))
+		logger.Error().
+			Err(err).
+			Int("port", *httpPort).
+			Msgf("failed to listen on port %d", *httpPort)
+
 		os.Exit(1)
 	}
 
@@ -106,7 +144,11 @@ func main() {
 	http.DefaultServeMux.Handle("/metrics", promhttp.Handler())
 	metricsListener, err := net.Listen("tcp", fmt.Sprintf(":%d", *metricsPort))
 	if err != nil {
-		logger.Log("err", err, fmt.Sprintf("failed to listen omn port %d", *metricsPort))
+		logger.Error().
+			Err(err).
+			Int("port", *metricsPort).
+			Msgf("failed to listen omn port %d", *metricsPort)
+
 		os.Exit(1)
 	}
 
@@ -115,17 +157,29 @@ func main() {
 
 	go func() {
 		defer wg.Done()
-		logger.Log("msg", fmt.Sprintf("listening on metrics port %d...", *metricsPort))
+		logger.Info().
+			Int("port", *metricsPort).
+			Msgf("listening on metrics port %d...", *metricsPort)
+
 		if err := http.Serve(metricsListener, http.DefaultServeMux); err != nil {
-			logger.Log("err", err, "msg", "failed to start metrics http server")
+			logger.Error().
+				Err(err).
+				Int("port", *metricsPort).
+				Msg("failed to start metrics http server")
 		}
 	}()
 
 	go func() {
 		defer wg.Done()
-		logger.Log("msg", fmt.Sprintf("listening on application port %d...", *httpPort))
+		logger.Info().
+			Int("port", *httpPort).
+			Msgf("listening on application port %d...", *httpPort)
+
 		if err := http.Serve(listener, httpHandler); err != nil {
-			logger.Log("err", err, "msg", "failed to start application http server")
+			logger.Error().
+				Int("port", *httpPort).
+				Err(err).
+				Msg("failed to start application http server")
 		}
 	}()
 

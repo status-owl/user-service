@@ -4,8 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
+	"github.com/rs/zerolog"
 	"github.com/status-owl/user-service/pkg/model"
 )
 
@@ -13,31 +12,67 @@ import (
 
 type Middleware func(UserStore) UserStore
 
-func LoggingMiddleware(logger log.Logger) Middleware {
+func LoggingMiddleware(logger zerolog.Logger) Middleware {
 	return func(next UserStore) UserStore {
 		return &loggingMiddleware{
-			logger: log.WithPrefix(logger, "interface", "UserStore"),
+			logger: logger.With().Str("interface", "UserStore").Logger(),
 			next:   next,
 		}
 	}
 }
 
 type loggingMiddleware struct {
-	logger log.Logger
+	logger zerolog.Logger
 	next   UserStore
 }
 
+func (mw *loggingMiddleware) Delete(ctx context.Context, id string) (err error) {
+	logger := mw.logger.With().Str("method", "Delete").Logger()
+
+	logger.Trace().
+		Str("id", id).
+		Msg("about to delete an user")
+
+	defer func() {
+		if err != nil {
+			logger.Error().
+				Str("id", id).
+				Err(err).
+				Msg("failed to delete an user")
+		} else {
+			logger.Info().
+				Str("id", id).
+				Msg("user created")
+		}
+	}()
+
+	err = mw.next.Delete(ctx, id)
+	return
+}
+
 func (mw *loggingMiddleware) Create(ctx context.Context, user *model.User) (id string, err error) {
-	l := log.WithPrefix(mw.logger, "method", "Create")
-	level.Debug(l).Log("user", user, "msg", "about to create a user")
+	logger := mw.logger.With().
+		Str("method", "Create").
+		Stringer("user", user).
+		Logger()
+
+	logger.Trace().
+		Msg("about to create a user")
 
 	defer func(begin time.Time) {
-		level.Info(l).Log(
-			"user", user,
-			"id", id,
-			"err", err,
-			"took", time.Since(begin),
-		)
+		logger = logger.With().
+			Dur("took", time.Since(begin)).
+			Logger()
+
+		if err != nil {
+			logger.Error().
+				Err(err).
+				Msg("failed to create an user")
+		} else {
+			logger.Info().
+				Str("id", id).
+				Msg("user created")
+		}
 	}(time.Now())
 
 	id, err = mw.next.Create(ctx, user)
@@ -45,19 +80,28 @@ func (mw *loggingMiddleware) Create(ctx context.Context, user *model.User) (id s
 }
 
 func (mw *loggingMiddleware) FindByID(ctx context.Context, id string) (user *model.User, err error) {
-	l := log.WithPrefix(mw.logger, "method", "FindByID")
-	level.Debug(l).Log(
-		"id", id,
-		"msg", "about to find a user by id",
-	)
+	logger := mw.logger.With().
+		Str("method", "FindByID").
+		Str("id", id).
+		Logger()
+
+	logger.Trace().
+		Msg("about to find a user by id")
 
 	defer func(begin time.Time) {
-		level.Info(l).Log(
-			"id", id,
-			"user", user,
-			"err", err,
-			"took", time.Since(begin),
-		)
+		logger = logger.With().
+			Dur("took", time.Since(begin)).
+			Logger()
+
+		if err != nil {
+			logger.Error().
+				Err(err).
+				Msg("failed to find user")
+		} else {
+			logger.Info().
+				Stringer("user", user).
+				Msg("user found")
+		}
 	}(time.Now())
 
 	user, err = mw.next.FindByID(ctx, id)
@@ -65,19 +109,28 @@ func (mw *loggingMiddleware) FindByID(ctx context.Context, id string) (user *mod
 }
 
 func (mw *loggingMiddleware) FindByEMail(ctx context.Context, email string) (user *model.User, err error) {
-	l := log.WithPrefix(mw.logger, "method", "FindByID")
-	level.Debug(l).Log(
-		"email", email,
-		"msg", "about to find a user by email",
-	)
+	logger := mw.logger.With().
+		Str("method", "FindByEmail").
+		Logger()
+
+	logger.Trace().
+		Msg("about to find a user by email")
 
 	defer func(begin time.Time) {
-		level.Info(l).Log(
-			"email", email,
-			"user", user,
-			"err", err,
-			"took", time.Since(begin),
-		)
+		logger = logger.With().
+			Dur("took", time.Since(begin)).
+			Logger()
+
+		if err != nil {
+			logger.Error().
+				Err(err).
+				Str("email", email).
+				Msg("user not found")
+		} else {
+			logger.Info().
+				Stringer("user", user).
+				Msg("user found")
+		}
 	}(time.Now())
 
 	user, err = mw.next.FindByEMail(ctx, email)
@@ -85,34 +138,57 @@ func (mw *loggingMiddleware) FindByEMail(ctx context.Context, email string) (use
 }
 
 func (mw *loggingMiddleware) HasUsersWithRole(ctx context.Context, role model.Role) (exist bool, err error) {
-	l := log.WithPrefix(mw.logger, "method", "HasUserWithRole")
-	level.Debug(l).Log(
-		"role", role,
-		"msg", "about to determine if any users in a particular role do exist",
-	)
+	logger := mw.logger.With().
+		Str("method", "HasUserWithRole").
+		Stringer("role", role).
+		Logger()
 
-	defer func() {
-		level.Info(l).Log(
-			"role", role,
-			"exist", exist,
-			"err", err,
-		)
-	}()
+	logger.Trace().
+		Msg("about to determine if any users in a particular role do exist")
+
+	defer func(begin time.Time) {
+		logger = logger.With().
+			Dur("took", time.Since(begin)).
+			Logger()
+
+		if err != nil {
+			logger.Error().
+				Err(err).
+				Msg("failed to determine if any users in a particular role do exist")
+		} else {
+			logger.Info().
+				Bool("exist", exist).
+				Msg("determined if at least one user in a particular role does exist")
+		}
+	}(time.Now())
 
 	exist, err = mw.next.HasUsersWithRole(ctx, role)
 	return
 }
 
 func (mw *loggingMiddleware) clear(ctx context.Context) (count int64, err error) {
-	l := log.WithPrefix(mw.logger, "method", "clear")
-	level.Debug(l).Log("msg", "about to delete all users")
+	logger := mw.logger.With().
+		Str("method", "clear").
+		Logger()
 
-	defer func() {
-		level.Info(l).Log(
-			"err", err,
-			"count", count,
-		)
-	}()
+	logger.Trace().Msg("about to remove all users")
+
+	defer func(begin time.Time) {
+		logger = logger.With().
+			Dur("took", time.Since(begin)).
+			Logger()
+
+		if err != nil {
+			logger.Error().
+				Err(err).
+				Msg("failed to clear the db")
+		} else {
+			logger.Info().
+				Int64("count", count).
+				Msg("cleared db")
+		}
+
+	}(time.Now())
 
 	count, err = mw.next.clear(ctx)
 	return

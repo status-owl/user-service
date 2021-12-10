@@ -40,19 +40,19 @@ var (
 // note that the id is going to be overwritten with generated one based on current timestamp
 func newMongoUser(user *model.User) *mongoUser {
 	return &mongoUser{
-		ID:      primitive.NewObjectID(),
-		Name:    user.Name,
-		EMail:   user.EMail,
-		Role:    string(user.Role),
+		ID:    primitive.NewObjectID(),
+		Name:  user.Name,
+		EMail: user.EMail,
+		Role:  string(user.Role),
 	}
 }
 
 func (u *mongoUser) toUser() *model.User {
 	return &model.User{
-		ID:      u.ID.Hex(),
-		Name:    u.Name,
-		EMail:   u.EMail,
-		Role:    model.RoleFromString(u.Role),
+		ID:    u.ID.Hex(),
+		Name:  u.Name,
+		EMail: u.EMail,
+		Role:  model.RoleFromString(u.Role),
 	}
 }
 
@@ -159,4 +159,21 @@ func (s *mongoUserStore) HasUsersWithRole(ctx context.Context, role model.Role) 
 	fmt.Println(count)
 
 	return count > 0, nil
+}
+
+func (s *mongoUserStore) Delete(ctx context.Context, id string) error {
+	objectId, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return ErrNotFound
+	}
+
+	_, err = s.col().DeleteOne(ctx, bson.M{"_id": objectId})
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return ErrNotFound
+		}
+		return fmt.Errorf("failed to delete user %q: %w", id, err)
+	}
+
+	return nil
 }

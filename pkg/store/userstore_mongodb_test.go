@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/rs/zerolog"
 	"github.com/status-owl/user-service/pkg/model"
 	"github.com/stretchr/testify/assert"
 	tc "github.com/testcontainers/testcontainers-go"
@@ -16,8 +17,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-
-	gklog "github.com/go-kit/log"
 )
 
 var mongoClient *mongo.Client
@@ -42,7 +41,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("failed to establish a mongodb connection: %s", err.Error())
 	}
 
-	store, err = NewUserStore(mongoClient, gklog.NewJSONLogger(os.Stdout))
+	store, err = NewUserStore(mongoClient, zerolog.New(os.Stdout).With().Caller().Logger())
 	if err != nil {
 		log.Fatalf("failed to create the userStore: %s", err.Error())
 	}
@@ -142,6 +141,22 @@ func TestClear(t *testing.T) {
 	}
 }
 
+func TestDelete(t *testing.T) {
+	clearDB()
+
+	a := assert.New(t)
+	u := fixtures.users.reporter
+	id, err := store.Create(context.Background(), u)
+	a.Nil(err)
+
+	err = store.Delete(context.Background(), id)
+	a.Nil(err)
+
+	// should return ErrNotFound for not existing user
+	err = store.Delete(context.Background(), "abcde")
+	a.ErrorIs(err, ErrNotFound)
+}
+
 type mongoContainer struct {
 	tc.Container
 	URI string
@@ -203,23 +218,23 @@ var fixtures = struct {
 }{
 	users: struct{ undefined, admin, reporter, withoutRole *model.User }{
 		undefined: &model.User{
-			Name:    "John Doe",
-			EMail:   "john.doe@example.com",
-			Role:    model.Undefined,
+			Name:  "John Doe",
+			EMail: "john.doe@example.com",
+			Role:  model.Undefined,
 		},
 		admin: &model.User{
-			Name:    "Mary Doe",
-			EMail:   "mary.doe@example.com",
-			Role:    model.Admin,
+			Name:  "Mary Doe",
+			EMail: "mary.doe@example.com",
+			Role:  model.Admin,
 		},
 		reporter: &model.User{
-			Name:    "Fritz Nebel",
-			EMail:   "fritz.nebel@example.com",
-			Role:    model.Reporter,
+			Name:  "Fritz Nebel",
+			EMail: "fritz.nebel@example.com",
+			Role:  model.Reporter,
 		},
 		withoutRole: &model.User{
-			Name:    "Mark Defoe",
-			EMail:   "make.d@example.com",
+			Name:  "Mark Defoe",
+			EMail: "make.d@example.com",
 		},
 	},
 }
