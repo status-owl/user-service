@@ -15,7 +15,6 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-
 	"github.com/status-owl/user-service/pkg/service"
 	"github.com/status-owl/user-service/pkg/store"
 	"github.com/status-owl/user-service/pkg/transport"
@@ -30,7 +29,8 @@ func main() {
 	var (
 		metricsPort = flag.Int("metrics-port", 8081, "http port serving metrics")
 		httpPort    = flag.Int("http-port", 8080, "http port")
-		jsonLogger  = flag.Bool("json-logger", true, "if true - log as json")
+		devLogging  = flag.Bool("dev-logging", false, "enables dev logging")
+		logLevel    = flag.String("log-level", "info", "default log level")
 		mongoDbUri  = flag.String("mongodb-uri", "", "mongodb connection uri")
 		natsUrl     = flag.String("nats-url", nats.DefaultURL, "URL for connection to NATS")
 		help        = flag.Bool("help", false, "print usage and exit")
@@ -41,11 +41,12 @@ func main() {
 		os.Exit(0)
 	}
 
-	var logger zerolog.Logger
-	if *jsonLogger {
-		logger = zerolog.New(os.Stdout).With().Caller().Logger()
-	} else {
-		logger = zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout}).With().Caller().Logger()
+	logger, err := setUpLogger(*devLogging, *logLevel)
+	if err != nil {
+		logger.Fatal().
+			Err(err).
+			Msg("failed to set up the logger")
+		os.Exit(-1)
 	}
 
 	natsConn, err := nats.Connect(*natsUrl)
@@ -73,7 +74,7 @@ func main() {
 
 	info, err := js.StreamInfo("USERS")
 	if err != nil {
-		logger.Error().
+		logger.Fatal().
 			Err(err).
 			Str("url", *natsUrl).
 			Msg("failed to get stream info from nats server or stream doesn't exist")
@@ -86,7 +87,7 @@ func main() {
 		})
 
 		if err != nil {
-			logger.Error().
+			logger.Fatal().
 				Err(err).
 				Str("url", *natsUrl).
 				Msg("failed to create USERS streams on nats server")
@@ -102,7 +103,7 @@ func main() {
 
 	mongoClient, err := connectMongo(*mongoDbUri)
 	if err != nil {
-		logger.Error().
+		logger.Fatal().
 			Err(err).
 			Msg("failed to establish a connection to mongodb")
 
@@ -111,7 +112,7 @@ func main() {
 
 	defer func() {
 		if err = mongoClient.Disconnect(context.Background()); err != nil {
-			logger.Error().
+			logger.Fatal().
 				Err(err).
 				Msg("failed to disconnect from mongodb")
 
@@ -121,7 +122,7 @@ func main() {
 
 	userStore, err := store.NewUserStore(mongoClient, logger)
 	if err != nil {
-		logger.Error().
+		logger.Fatal().
 			Err(err).
 			Msg("failed to create a user store")
 
@@ -129,10 +130,10 @@ func main() {
 	}
 
 	svc := service.NewService(userStore, logger, js)
-	httpHandler := transport.NewHTTPHandler(svc)
+	httpHandler := transport.NewHTTPHandler(svc, logger)
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *httpPort))
 	if err != nil {
-		logger.Error().
+		logger.Fatal().
 			Err(err).
 			Int("port", *httpPort).
 			Msgf("failed to listen on port %d", *httpPort)
@@ -141,10 +142,10 @@ func main() {
 	}
 
 	// metrics listener
-	http.DefaultServeMux.Handle("/metrics", promhttp.Handler())
+	http.Handle("/metrics", promhttp.Handler())
 	metricsListener, err := net.Listen("tcp", fmt.Sprintf(":%d", *metricsPort))
 	if err != nil {
-		logger.Error().
+		logger.Fatal().
 			Err(err).
 			Int("port", *metricsPort).
 			Msgf("failed to listen omn port %d", *metricsPort)
@@ -162,7 +163,7 @@ func main() {
 			Msgf("listening on metrics port %d...", *metricsPort)
 
 		if err := http.Serve(metricsListener, http.DefaultServeMux); err != nil {
-			logger.Error().
+			logger.Fatal().
 				Err(err).
 				Int("port", *metricsPort).
 				Msg("failed to start metrics http server")
@@ -176,7 +177,7 @@ func main() {
 			Msgf("listening on application port %d...", *httpPort)
 
 		if err := http.Serve(listener, httpHandler); err != nil {
-			logger.Error().
+			logger.Fatal().
 				Int("port", *httpPort).
 				Err(err).
 				Msg("failed to start application http server")
@@ -203,4 +204,26 @@ func connectMongo(uri string) (*mongo.Client, error) {
 	}
 
 	return mongoClient, pingMongo(mongoClient)
+}
+
+// setUpLogger create and configures a zerolog logger based on given parameters
+func setUpLogger(dev bool, levelStr string) (zerolog.Logger, error) {
+	level, err := zerolog.ParseLevel(levelStr)
+	if err != nil {
+		return zerolog.Nop(), fmt.Errorf("failed to determine log level '%s': %w", levelStr, err)
+	}
+
+	zerolog.SetGlobalLevel(level)
+	var logger zerolog.Logger
+	if dev {
+		logger = zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}).
+			With().
+			Caller().
+			Timestamp().
+			Logger()
+	} else {
+		logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
+	}
+
+	return logger, nil
 }

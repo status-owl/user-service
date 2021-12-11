@@ -100,7 +100,7 @@ func TestCreateUser(t *testing.T) {
 				Create(gomock.Any(), gomock.Eq(&u)).
 				Return(tt.id, tt.err)
 
-			NewHTTPHandler(svc).ServeHTTP(rr, req)
+			NewBaseHTTPHandler(svc).ServeHTTP(rr, req)
 
 			a.Equal(tt.code, rr.Code)
 
@@ -190,7 +190,7 @@ func TestFindUserByID(t *testing.T) {
 				FindByID(gomock.Any(), gomock.Eq(tt.id)).
 				Return(tt.user, tt.err)
 
-			NewHTTPHandler(svc).ServeHTTP(rr, req)
+			NewBaseHTTPHandler(svc).ServeHTTP(rr, req)
 
 			a.Equal(tt.code, rr.Code)
 

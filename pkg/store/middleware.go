@@ -15,8 +15,10 @@ type Middleware func(UserStore) UserStore
 func LoggingMiddleware(logger zerolog.Logger) Middleware {
 	return func(next UserStore) UserStore {
 		return &loggingMiddleware{
-			logger: logger.With().Str("interface", "UserStore").Logger(),
-			next:   next,
+			logger: logger.With().
+				Str("interface", "UserStore").
+				Logger(),
+			next: next,
 		}
 	}
 }

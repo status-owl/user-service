@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"sync"
 
 	"github.com/nats-io/nats.go"
@@ -19,7 +20,9 @@ type Middleware func(UserService) UserService
 func LoggingMiddleware(logger zerolog.Logger) Middleware {
 	return func(next UserService) UserService {
 		return &loggingMiddleware{
-			logger.With().Str("interface", "UserService").Logger(),
+			logger.With().
+				Str("interface", "UserService").
+				Logger(),
 			next,
 		}
 	}
@@ -39,9 +42,14 @@ func (mw *loggingMiddleware) Delete(ctx context.Context, id string) (err error) 
 	logger.Trace().Msg("about to delete an user")
 
 	defer func() {
-		logger.Info().
-			Err(err).
-			Send()
+		if err != nil {
+			logger.Error().
+				Err(err).
+				Msg("failed to delete an user")
+		} else {
+			logger.Info().
+				Msg("deleted user")
+		}
 	}()
 
 	return mw.next.Delete(ctx, id)
@@ -56,10 +64,15 @@ func (mw *loggingMiddleware) Create(ctx context.Context, user *model.RequestedUs
 	logger.Trace().Msg("about to create an user")
 
 	defer func() {
-		logger.Info().
-			Str("id", id).
-			Err(err).
-			Send()
+		if err != nil {
+			logger.Info().
+				Err(err).
+				Msg("failed to create an user")
+		} else {
+			logger.Info().
+				Str("id", id).
+				Msg("user created")
+		}
 	}()
 
 	return mw.next.Create(ctx, user)
@@ -71,16 +84,23 @@ func (mw *loggingMiddleware) FindByID(ctx context.Context, id string) (user *mod
 		Str("id", id).
 		Logger()
 
-	logger.Trace().Msgf("about to find user %s", id)
+	logger.Trace().Msg("about to find an user")
 
 	defer func() {
-		logger.Info().
-			Stringer("user", user).
-			Err(err).
-			Send()
+		if err != nil {
+			logger.Error().
+				Err(err).
+				Msg("failed to find an user")
+		} else {
+			logger.Info().
+				Stringer("user", user).
+				Err(err).
+				Msg("user found")
+		}
 	}()
 
-	return mw.next.FindByID(ctx, id)
+	user, err = mw.next.FindByID(ctx, id)
+	return
 }
 
 // Instrumenting Middleware
@@ -88,19 +108,19 @@ func (mw *loggingMiddleware) FindByID(ctx context.Context, id string) (user *mod
 func InstrumentingMiddleware() Middleware {
 	return func(next UserService) UserService {
 		return &instrumentingMiddleware{
-			createdUsers: prometheus.NewCounterVec(prometheus.CounterOpts{
+			createdUsers: promauto.NewCounterVec(prometheus.CounterOpts{
 				Namespace: "status_owl",
 				Subsystem: "user_service",
 				Name:      "users_created",
 				Help:      "Total count of created users",
 			}, []string{"status"}),
-			fetchedUsers: prometheus.NewCounterVec(prometheus.CounterOpts{
+			fetchedUsers: promauto.NewCounterVec(prometheus.CounterOpts{
 				Namespace: "status_owl",
 				Subsystem: "user_service",
 				Name:      "users_fetched",
 				Help:      "Total count of fetched users",
 			}, []string{"status"}),
-			deletedUsers: prometheus.NewCounterVec(prometheus.CounterOpts{
+			deletedUsers: promauto.NewCounterVec(prometheus.CounterOpts{
 				Namespace: "status_owl",
 				Subsystem: "user_service",
 				Name:      "users_deleted",

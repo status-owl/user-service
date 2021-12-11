@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rs/zerolog"
 	"net/http"
 	"time"
 
@@ -16,11 +17,17 @@ import (
 //go:generate oapi-codegen -o model.go --generate=types --package=$GOPACKAGE ../../spec/api-v1.yaml
 
 // NewHTTPHandler creates and returns a configured http.Handler
-func NewHTTPHandler(svc service.UserService) http.Handler {
+func NewHTTPHandler(svc service.UserService, logger zerolog.Logger) http.Handler {
+	return LoggingMiddleware(logger, NewBaseHTTPHandler(svc))
+}
+
+// NewBaseHTTPHandler returns a base http.Handler without any configured middlewares
+func NewBaseHTTPHandler(svc service.UserService) http.Handler {
 	r := mux.NewRouter()
 
 	r.HandleFunc("/users", createUser(svc)).Methods("POST")
 	r.HandleFunc("/users/{id}", findUserByID(svc)).Methods("GET")
+
 	return r
 }
 
