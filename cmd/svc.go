@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/openzipkin/zipkin-go"
 	"net"
 	"net/http"
 	"os"
@@ -22,6 +23,9 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
+
+	zipkinmiddleware "github.com/openzipkin/zipkin-go/middleware/http"
+	zipkinhttp "github.com/openzipkin/zipkin-go/reporter/http"
 )
 
 func main() {
@@ -32,6 +36,7 @@ func main() {
 		devLogging  = flag.Bool("dev-logging", false, "enables dev logging")
 		logLevel    = flag.String("log-level", "info", "default log level")
 		mongoDbUri  = flag.String("mongodb-uri", "", "mongodb connection uri")
+		zipkinURL   = flag.String("zipkin-url", "", "Enable Zipkin tracing via HTTP reporter URL e.g. http://localhost:9411/api/v2/spans")
 		natsUrl     = flag.String("nats-url", nats.DefaultURL, "URL for connection to NATS")
 		help        = flag.Bool("help", false, "print usage and exit")
 	)
@@ -129,8 +134,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	tracer, cleanUpTracer, err := setUpTracer(*zipkinURL)
+	defer cleanUpTracer()
+	if err != nil {
+		logger.Fatal().
+			Err(err).
+			Msg("failed to create zipkin tracer")
+		os.Exit(1)
+	}
+
 	svc := service.NewService(userStore, logger, js)
-	httpHandler := transport.NewHTTPHandler(svc, logger)
+	httpHandler := zipkinmiddleware.NewServerMiddleware(tracer)(transport.NewHTTPHandler(svc, logger))
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *httpPort))
 	if err != nil {
 		logger.Fatal().
@@ -206,7 +220,7 @@ func connectMongo(uri string) (*mongo.Client, error) {
 	return mongoClient, pingMongo(mongoClient)
 }
 
-// setUpLogger create and configures a zerolog logger based on given parameters
+// setUpLogger creates and configures a zerolog logger based on given parameters
 func setUpLogger(dev bool, levelStr string) (zerolog.Logger, error) {
 	level, err := zerolog.ParseLevel(levelStr)
 	if err != nil {
@@ -226,4 +240,23 @@ func setUpLogger(dev bool, levelStr string) (zerolog.Logger, error) {
 	}
 
 	return logger, nil
+}
+
+// setUpTracer creates and configures zipkin tracer
+func setUpTracer(url string) (*zipkin.Tracer, func(), error) {
+	var cleanUpFunc = func() {}
+	reporter := zipkinhttp.NewReporter(url)
+	cleanUpFunc = func() { _ = reporter.Close() }
+
+	endpoint, err := zipkin.NewEndpoint("user-service", "localhost:0")
+	if err != nil {
+		return nil, cleanUpFunc, fmt.Errorf("failed to create zipkin's endpoint: %w", err)
+	}
+
+	tracer, err := zipkin.NewTracer(reporter, zipkin.WithLocalEndpoint(endpoint))
+	if err != nil {
+		return nil, cleanUpFunc, fmt.Errorf("failed to create zipkin's tracer: %w", err)
+	}
+
+	return tracer, cleanUpFunc, nil
 }
