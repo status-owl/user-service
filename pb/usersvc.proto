@@ -4,7 +4,7 @@ option go_package = "github.com/status-owl/user-service/pb";
 
 package pb;
 
-service Users {
+service UserService {
   rpc CreateUser(CreateUserRequest) returns (CreateUserReply) {}
   rpc UpdateUser(UpdateUserRequest) returns (UpdateUserReply) {}
   rpc DeleteUser(DeleteUserRequest) returns (DeleteUserReply) {}
