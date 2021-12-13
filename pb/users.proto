@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+option go_package = "github.com/status-owl/user-service/pb";
+
+package pb;
+
+service Users {
+  rpc CreateUser(CreateUserRequest) returns (CreateUserReply) {}
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserReply) {}
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserReply) {}
+}
+
+
+enum Role {
+  UNKNOWN = 0;
+  REGULAR = 1;
+  REPORTER = 2;
+  ADMIN = 3;
+}
+
+message CreateUserRequest {
+  string name = 1;
+  string email = 2;
+  Role role = 3;
+}
+
+message CreateUserReply {
+  string id = 1;
+}
+
+message UpdateUserRequest {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+  Role role = 4;
+}
+
+message UpdateUserReply {
+
+}
+
+message DeleteUserRequest {
+  string id = 1;
+}
+
+message DeleteUserReply {
+
+}
