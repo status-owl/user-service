@@ -5,6 +5,7 @@ import "fmt"
 type Role string
 
 const (
+	Unknown   Role = "UNKNOWN"
 	Admin     Role = "ADMIN"
 	Reporter  Role = "REPORTER"
 	Undefined Role = "UNDEFINED"
@@ -17,6 +18,8 @@ func (r Role) String() string {
 
 func RoleFromString(s string) Role {
 	switch s {
+	case string(Unknown):
+		return Unknown
 	case string(Admin):
 		return Admin
 	case string(Reporter):
@@ -31,13 +34,12 @@ type User struct {
 	ID    string
 	Name  string
 	EMail string
-	Pwd   []byte
 	Role  Role
 }
 
 // String implements Stringer interface
 func (u *User) String() string {
-	return fmt.Sprintf("RequestedUser { id = %q, role = %q, email = ***, name = ***, pwd = *** }", u.ID, u.Role)
+	return fmt.Sprintf("RequestedUser { id = %q, role = %q, email = ***, name = *** }", u.ID, u.Role)
 }
 
 // RequestedUser represent a user that
@@ -46,10 +48,9 @@ func (u *User) String() string {
 // and no role - it can be assigned by the admin user later on
 type RequestedUser struct {
 	EMail, Name string
-	Pwd         []byte
 }
 
 // String implements Stringer interface
-func (u *RequestedUser) String() string {
-	return "RequestedUser { email = ***, name = ***, pwd = *** }"
+func (u RequestedUser) String() string {
+	return "RequestedUser { email = ***, name = *** }"
 }

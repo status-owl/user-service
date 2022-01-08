@@ -2,12 +2,8 @@ package service
 
 import (
 	"context"
-	"encoding/json"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"sync"
-
-	"github.com/nats-io/nats.go"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/zerolog"
 	"github.com/status-owl/user-service/pkg/model"
 )
@@ -55,7 +51,7 @@ func (mw *loggingMiddleware) Delete(ctx context.Context, id string) (err error) 
 	return mw.next.Delete(ctx, id)
 }
 
-func (mw *loggingMiddleware) Create(ctx context.Context, user *model.RequestedUser) (id string, err error) {
+func (mw *loggingMiddleware) Create(ctx context.Context, user model.RequestedUser) (id string, err error) {
 	logger := mw.logger.With().
 		Str("method", "Create").
 		Stringer("user", user).
@@ -152,7 +148,7 @@ func err2Status(err error) string {
 	return "success"
 }
 
-func (mw *instrumentingMiddleware) Create(ctx context.Context, user *model.RequestedUser) (id string, err error) {
+func (mw *instrumentingMiddleware) Create(ctx context.Context, user model.RequestedUser) (id string, err error) {
 	defer func() {
 		mw.createdUsers.With(prometheus.Labels{"status": err2Status(err)}).Inc()
 	}()
@@ -168,82 +164,4 @@ func (mw *instrumentingMiddleware) FindByID(ctx context.Context, id string) (use
 
 	user, err = mw.next.FindByID(ctx, id)
 	return
-}
-
-func EventingMiddleware(js nats.JetStream) Middleware {
-	return func(next UserService) UserService {
-		return &eventingMiddleware{
-			js:   js,
-			next: next,
-		}
-	}
-}
-
-type eventingMiddleware struct {
-	js   nats.JetStream
-	once sync.Once
-	next UserService
-}
-
-func (mw *eventingMiddleware) Delete(ctx context.Context, id string) error {
-	err := mw.next.Delete(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	var event = UserDeletedEvent{ID: id}
-	b, err := json.Marshal(event)
-	if err != nil {
-		return err
-	}
-
-	_, err = mw.js.Publish("USERS.deleted", b)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (mw *eventingMiddleware) Create(ctx context.Context, user *model.RequestedUser) (string, error) {
-	id, err := mw.next.Create(ctx, user)
-	if err != nil {
-		return id, err
-	}
-
-	var event = UserCreatedEvent{
-		ID:  id,
-		Pwd: string(user.Pwd),
-	}
-
-	b, err := json.Marshal(event)
-	if err != nil {
-		go func() {
-			_ = mw.next.Delete(context.Background(), id)
-		}()
-		return "", err
-	}
-
-	_, err = mw.js.Publish("USERS.created", b)
-	if err != nil {
-		go func() {
-			_ = mw.next.Delete(context.Background(), id)
-		}()
-		return "", err
-	}
-
-	return id, nil
-}
-
-func (mw *eventingMiddleware) FindByID(ctx context.Context, id string) (*model.User, error) {
-	return mw.next.FindByID(ctx, id)
-}
-
-type UserCreatedEvent struct {
-	ID  string `json:"id"`
-	Pwd string `json:"pwd"`
-}
-
-type UserDeletedEvent struct {
-	ID string `json:"id"`
 }

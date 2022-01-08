@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/status-owl/user-service/pkg/model"
 	"github.com/stretchr/testify/assert"
@@ -196,7 +195,7 @@ func setupMongo(ctx context.Context) (*mongoContainer, error) {
 		if err = container.Terminate(ctx); err != nil {
 			panic(err)
 		}
-		return nil, errors.Wrap(err, "failed to determine mapped port")
+		return nil, fmt.Errorf("failed to determine mapped port: %w", err)
 	}
 
 	host, err := container.Host(ctx)
@@ -204,7 +203,7 @@ func setupMongo(ctx context.Context) (*mongoContainer, error) {
 		if err = container.Terminate(ctx); err != nil {
 			panic(err)
 		}
-		return nil, errors.Wrap(err, "failed to determine host")
+		return nil, fmt.Errorf("failed to determine host: %w", err)
 	}
 
 	uri := fmt.Sprintf("mongodb://%s:%s@%s:%s", user, pwd, host, mappedPort.Port())

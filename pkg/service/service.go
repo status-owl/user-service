@@ -1,20 +1,18 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog"
 	"github.com/status-owl/user-service/pkg/model"
 	"github.com/status-owl/user-service/pkg/store"
 )
 
 type UserService interface {
-	Create(ctx context.Context, user *model.RequestedUser) (string, error)
+	Create(ctx context.Context, user model.RequestedUser) (string, error)
 	Delete(ctx context.Context, id string) error
 	FindByID(ctx context.Context, id string) (*model.User, error)
 }
@@ -62,12 +60,10 @@ func (errors *ValidationErrors) Error() string {
 func NewService(
 	store store.UserStore,
 	logger zerolog.Logger,
-	js nats.JetStream,
 ) UserService {
 	var svc UserService
 	{
 		svc = &userService{store}
-		svc = EventingMiddleware(js)(svc)
 		svc = LoggingMiddleware(logger)(svc)
 		svc = InstrumentingMiddleware()(svc)
 	}
@@ -82,7 +78,7 @@ func (s *userService) Delete(ctx context.Context, id string) error {
 	return s.userStore.Delete(ctx, id)
 }
 
-func (s *userService) Create(ctx context.Context, user *model.RequestedUser) (string, error) {
+func (s *userService) Create(ctx context.Context, user model.RequestedUser) (string, error) {
 	if err := s.validateRequestedUser(user); err != nil {
 		return "", err
 	}
@@ -100,19 +96,12 @@ func (s *userService) Create(ctx context.Context, user *model.RequestedUser) (st
 	return s.userStore.Create(ctx, &model.User{Name: user.Name, EMail: user.EMail})
 }
 
-func (s *userService) validateRequestedUser(user *model.RequestedUser) *ValidationErrors {
+func (s *userService) validateRequestedUser(user model.RequestedUser) *ValidationErrors {
 	var err ValidationErrors
 	if len(strings.TrimSpace(user.EMail)) < 5 {
 		err = err.Append(ValidationError{
 			Name:   "email",
 			Reason: "invalid email address",
-		})
-	}
-
-	if len(bytes.TrimSpace(user.Pwd)) < 12 {
-		err = err.Append(ValidationError{
-			Name:   "password",
-			Reason: "consider to use a stronger password, at least 12 characters long",
 		})
 	}
 

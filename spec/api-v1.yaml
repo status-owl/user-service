@@ -8,30 +8,6 @@ servers:
 - url: https://api.status-owl.de
 paths:
   /users:
-    post:
-      summary: Create a user
-      operationId: createUser
-      tags:
-      - users
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateUserRequest"  
-      responses:
-        '201':
-          description: User has been created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreateUserResponse"
-        default:
-          description: an error is occurred
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
     get:
       summary: Find users with specific filter
       operationId: FindUsers
@@ -109,33 +85,6 @@ components:
           type: string
           description: Email address
           example: john.doe@example.com
-    CreateUserRequest:
-      type: object
-      required:
-        - name
-        - email
-        - password
-      properties:
-        name:
-          type: string
-          description: User name
-          example: John Doe
-        email:
-          type: string
-          description: Email address
-          example: john.doe@example.com
-        password:
-          type: string
-          description: Password
-          example: s!23dHgds_213j
-    CreateUserResponse:
-      type: object
-      required:
-        - id
-      properties:
-        id:
-          type: string
-          example: b479a4d1-bbaf-46b6-9575-6a932b3a5f50
     Problem:
       type: object
       required:

@@ -6,8 +6,8 @@ package pb;
 
 service UserService {
   rpc CreateUser(CreateUserRequest) returns (CreateUserReply) {}
-  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserReply) {}
-  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserReply) {}
+  //rpc UpdateUser(UpdateUserRequest) returns (UpdateUserReply) {}
+  //rpc DeleteUser(DeleteUserRequest) returns (DeleteUserReply) {}
 }
 
 
@@ -21,7 +21,6 @@ enum Role {
 message CreateUserRequest {
   string name = 1;
   string email = 2;
-  Role role = 3;
 }
 
 message CreateUserReply {

@@ -4,14 +4,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/konstantinwirz/srvgroup"
 	"github.com/openzipkin/zipkin-go"
+	"github.com/status-owl/user-service/pb"
+	"google.golang.org/grpc"
 	"net"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 
-	"github.com/nats-io/nats.go"
+	"github.com/heptiolabs/healthcheck"
 
 	"github.com/rs/zerolog"
 
@@ -28,82 +30,30 @@ import (
 	zipkinhttp "github.com/openzipkin/zipkin-go/reporter/http"
 )
 
-func main() {
+var logger zerolog.Logger
 
+func main() {
 	var (
-		metricsPort = flag.Int("metrics-port", 8081, "http port serving metrics")
 		httpPort    = flag.Int("http-port", 8080, "http port")
+		metricsPort = flag.Int("metrics-port", 8081, "http port serving metrics")
+		healthPort  = flag.Int("health-port", 8082, "port providing liveness and readiness endpoints")
+		grpcPort    = flag.Int("grpc-port", 5000, "grpc server port")
 		devLogging  = flag.Bool("dev-logging", false, "enables dev logging")
 		logLevel    = flag.String("log-level", "info", "default log level")
 		mongoDbUri  = flag.String("mongodb-uri", "", "mongodb connection uri")
 		zipkinURL   = flag.String("zipkin-url", "", "Enable Zipkin tracing via HTTP reporter URL e.g. http://localhost:9411/api/v2/spans")
-		natsUrl     = flag.String("nats-url", nats.DefaultURL, "URL for connection to NATS")
 		help        = flag.Bool("help", false, "print usage and exit")
 	)
+
 	flag.Parse()
 	if *help {
 		flag.Usage()
 		os.Exit(0)
 	}
 
-	logger, err := setUpLogger(*devLogging, *logLevel)
-	if err != nil {
-		logger.Fatal().
-			Err(err).
-			Msg("failed to set up the logger")
-		os.Exit(-1)
-	}
-
-	natsConn, err := nats.Connect(*natsUrl)
-	if err != nil {
-		logger.Error().
-			Err(err).
-			Str("url", *natsUrl).
-			Msg("failed to establish connection to NATS server")
-
+	if err := setUpLogger(*devLogging, *logLevel); err != nil {
+		fmt.Printf("failed to initialize the logger: %s", err.Error())
 		os.Exit(1)
-	}
-
-	js, err := natsConn.JetStream()
-	if err != nil {
-		logger.Error().
-			Err(err).
-			Msg("failed to create a JetStream")
-
-		os.Exit(1)
-	}
-
-	logger.Info().
-		Str("url", *natsUrl).
-		Msg("configured nats")
-
-	info, err := js.StreamInfo("USERS")
-	if err != nil {
-		logger.Fatal().
-			Err(err).
-			Str("url", *natsUrl).
-			Msg("failed to get stream info from nats server or stream doesn't exist")
-	}
-
-	if info == nil {
-		info, err = js.AddStream(&nats.StreamConfig{
-			Name:     "USERS",
-			Subjects: []string{"USERS.*"},
-		})
-
-		if err != nil {
-			logger.Fatal().
-				Err(err).
-				Str("url", *natsUrl).
-				Msg("failed to create USERS streams on nats server")
-
-			os.Exit(1)
-		}
-
-		logger.Info().
-			Str("name", info.Cluster.Name).
-			Strs("subjects", info.Config.Subjects).
-			Msg("created stream")
 	}
 
 	mongoClient, err := connectMongo(*mongoDbUri)
@@ -143,62 +93,126 @@ func main() {
 		os.Exit(1)
 	}
 
-	svc := service.NewService(userStore, logger, js)
-	httpHandler := zipkinmiddleware.NewServerMiddleware(tracer)(transport.NewHTTPHandler(svc, logger))
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *httpPort))
-	if err != nil {
-		logger.Fatal().
-			Err(err).
-			Int("port", *httpPort).
-			Msgf("failed to listen on port %d", *httpPort)
+	svc := service.NewService(userStore, logger)
 
-		os.Exit(1)
+	// set up application http server
+	var appSrv srvgroup.Server
+	{
+		handler := transport.NewHTTPHandler(svc, logger)
+		if tracer != nil {
+			handler = zipkinmiddleware.NewServerMiddleware(tracer)(handler)
+		}
+
+		srv := http.Server{
+			Addr:    fmt.Sprintf(":%d", *httpPort),
+			Handler: handler,
+		}
+
+		appSrv = srvgroup.ServerLifecycleMiddleware(
+			srvgroup.ServerLifecycleHooks{
+				BeforeServe: func() {
+					logger.Info().
+						Str("address", srv.Addr).
+						Msg("application http server listening...")
+				}},
+		)(srvgroup.HTTPServer(&srv))
 	}
 
-	// metrics listener
-	http.Handle("/metrics", promhttp.Handler())
-	metricsListener, err := net.Listen("tcp", fmt.Sprintf(":%d", *metricsPort))
-	if err != nil {
-		logger.Fatal().
-			Err(err).
-			Int("port", *metricsPort).
-			Msgf("failed to listen omn port %d", *metricsPort)
+	// set up metrics http server
+	var metricsSrv srvgroup.Server
+	{
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", promhttp.Handler())
+		srv := http.Server{
+			Addr:    fmt.Sprintf(":%d", *metricsPort),
+			Handler: mux,
+		}
 
-		os.Exit(1)
+		metricsSrv = srvgroup.ServerLifecycleMiddleware(
+			srvgroup.ServerLifecycleHooks{
+				BeforeServe: func() {
+					logger.Info().
+						Str("address", srv.Addr).
+						Msg("metrics http server listening...")
+				}},
+		)(srvgroup.HTTPServer(&srv))
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(2)
+	// set up grpc server
+	var grpcSrv srvgroup.Server
+	{
+		var grpcServer *grpc.Server
 
-	go func() {
-		defer wg.Done()
-		logger.Info().
-			Int("port", *metricsPort).
-			Msgf("listening on metrics port %d...", *metricsPort)
+		grpcSrv = srvgroup.Server{
+			Serve: func() error {
+				addr := fmt.Sprintf("localhost:%d", *grpcPort)
+				lis, err := net.Listen("tcp", addr)
+				if err != nil {
+					return err
+				}
 
-		if err := http.Serve(metricsListener, http.DefaultServeMux); err != nil {
-			logger.Fatal().
-				Err(err).
-				Int("port", *metricsPort).
-				Msg("failed to start metrics http server")
+				grpcServer = grpc.NewServer()
+				pb.RegisterUserServiceServer(grpcServer, transport.NewBaseGrpcServer(svc))
+
+				logger.Info().
+					Str("address", addr).
+					Msg("grpc application server listening...")
+
+				if err = grpcServer.Serve(lis); err != nil {
+					return err
+				}
+				return nil
+			},
+			Shutdown: func(ctx context.Context) error {
+				if grpcServer != nil {
+					grpcServer.GracefulStop()
+				}
+				return nil
+			},
 		}
-	}()
+	}
 
-	go func() {
-		defer wg.Done()
-		logger.Info().
-			Int("port", *httpPort).
-			Msgf("listening on application port %d...", *httpPort)
+	// set up health http server
+	var healthSrv srvgroup.Server
+	{
+		handler := healthcheck.NewHandler()
+		handler.AddLivenessCheck(
+			"http-server-check",
+			healthcheck.TCPDialCheck(fmt.Sprintf(":%d", *httpPort), 1*time.Second),
+		)
+		handler.AddReadinessCheck(
+			"mongodb-check",
+			func() error { return pingMongo(mongoClient) },
+		)
 
-		if err := http.Serve(listener, httpHandler); err != nil {
-			logger.Fatal().
-				Int("port", *httpPort).
-				Err(err).
-				Msg("failed to start application http server")
+		srv := http.Server{
+			Addr:    fmt.Sprintf(":%d", *healthPort),
+			Handler: handler,
 		}
-	}()
 
-	wg.Wait()
+		healthSrv = srvgroup.ServerLifecycleMiddleware(
+			srvgroup.ServerLifecycleHooks{
+				BeforeServe: func() {
+					logger.Info().
+						Str("address", srv.Addr).
+						Msg("health http server listening...")
+				}},
+		)(srvgroup.HTTPServer(&srv))
+	}
+
+	for _, err := range srvgroup.Run(
+		appSrv,
+		metricsSrv,
+		healthSrv,
+		grpcSrv,
+	) {
+		logger.Error().
+			Err(err).
+			Send()
+	}
+
+	logger.Info().
+		Msg("quit")
 }
 
 func pingMongo(client *mongo.Client) error {
@@ -221,14 +235,14 @@ func connectMongo(uri string) (*mongo.Client, error) {
 }
 
 // setUpLogger creates and configures a zerolog logger based on given parameters
-func setUpLogger(dev bool, levelStr string) (zerolog.Logger, error) {
+func setUpLogger(dev bool, levelStr string) error {
 	level, err := zerolog.ParseLevel(levelStr)
 	if err != nil {
-		return zerolog.Nop(), fmt.Errorf("failed to determine log level '%s': %w", levelStr, err)
+		logger = zerolog.Nop()
+		return fmt.Errorf("failed to determine log level '%s': %w", levelStr, err)
 	}
 
 	zerolog.SetGlobalLevel(level)
-	var logger zerolog.Logger
 	if dev {
 		logger = zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}).
 			With().
@@ -239,7 +253,7 @@ func setUpLogger(dev bool, levelStr string) (zerolog.Logger, error) {
 		logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
 	}
 
-	return logger, nil
+	return nil
 }
 
 // setUpTracer creates and configures zipkin tracer

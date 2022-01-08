@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gorilla/mux"
-	"github.com/status-owl/user-service/pkg/model"
 	"github.com/status-owl/user-service/pkg/service"
 )
 
@@ -23,50 +21,20 @@ func NewHTTPHandler(svc service.UserService, logger zerolog.Logger) http.Handler
 
 // NewBaseHTTPHandler returns a base http.Handler without any configured middlewares
 func NewBaseHTTPHandler(svc service.UserService) http.Handler {
-	r := mux.NewRouter()
+	mux := http.NewServeMux()
 
-	r.HandleFunc("/users", createUser(svc)).Methods("POST")
-	r.HandleFunc("/users/{id}", findUserByID(svc)).Methods("GET")
-
-	return r
-}
-
-func createUser(svc service.UserService) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var cur CreateUserRequest
-		if p, err := decodeRequest(r, &cur); err != nil {
-			handleError(w, p)
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(r.Context(), time.Second*10)
-		defer cancel()
-
-		id, err := svc.Create(ctx, &model.RequestedUser{
-			EMail: cur.Email,
-			Name:  cur.Name,
-			Pwd:   []byte(cur.Password),
-		})
-
-		if err != nil {
-			p := err2Problem(err)
-			handleError(w, p)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusCreated)
-		err = json.NewEncoder(w).Encode(CreateUserResponse{Id: id})
-	}
+	mux.HandleFunc("/users/", findUserByID(svc))
+	return mux
 }
 
 func findUserByID(svc service.UserService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		id, ok := vars["id"]
-		if !ok {
-			panic("check your route definition, expected an user id")
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
 		}
+
+		id := r.URL.Path[len("/users/"):]
 
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second*10)
 		defer cancel()
